@@ -1,0 +1,264 @@
+mod writer;
+use std::path::PathBuf;
+
+use crate::writer::BufferedWriter;
+
+use log::{Log, SetLoggerError, LevelFilter};
+use time::{format_description::FormatItem, OffsetDateTime, UtcDateTime};
+
+const TIMESTMAMP_FORMAT: &[FormatItem] = time::macros::format_description!(
+    "[hour]:[minute]:[second]:[subsecond digits:6]"
+);
+
+
+#[derive(PartialEq)]
+enum Timestamps {
+    None, 
+    Local,
+    Utc,
+}
+
+pub struct Logger {
+    /// The default log level for all the logs.
+    log_level: LevelFilter,
+    timestamps: Timestamps,
+    thread: bool,
+    target: bool,
+    writers: Vec<BufferedWriter>,
+}
+
+impl Logger {
+
+    /// Initializes the global logger with an RLogger instance with
+    /// default log level set to `Level::Trace`.
+    ///
+    /// ```no_run
+    /// use rslogger::Logger;
+    /// Logger::new().init().unwrap();
+    /// log::warn!("This is an example message.");
+    /// ```
+    ///
+    /// [`init`]: #method.init
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn new() -> Logger {
+        Logger { 
+            log_level: LevelFilter::Trace , 
+            timestamps: Timestamps::Local, 
+            target: false,
+            thread: false, 
+            writers: Vec::new() }
+    }
+
+    /// Sets the global log level of the logger. 
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn with_level(mut self, level: LevelFilter) -> Logger {
+        self.log_level = level;
+        self
+    }
+
+    /// Display timestamps in UTC time
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn with_utc_timestamps(mut self) -> Logger {
+        self.timestamps = Timestamps::Utc;
+        self
+    }
+
+    /// Display timestamps in Local time
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn with_local_timestamps(mut self) -> Logger {
+        self.timestamps = Timestamps::Local;
+        self
+    }
+
+    /// Don't display timestamps
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn without_timestamps(mut self) -> Logger {
+        self.timestamps = Timestamps::None;
+        self
+    }
+
+    /// Display thread Id
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn with_thread(mut self) -> Logger {
+        self.thread = true;
+        self
+    }
+
+    /// Displays the module name that is logging
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn with_target(mut self) -> Logger {
+        self.target = true;
+        self
+    }
+
+    /// Hides the module name that is logging
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn without_target(mut self) -> Logger {
+        self.target = false;
+        self
+    }
+
+    ///
+    /// Adds a stdout writer. 
+    /// * `multi_thread` - If set to true, the writer will be multi thread, otherwise single thread
+    /// * `capacity` - If Some(capacity), specified the buffer capacity of the writer. If None, initializes it with the default capacity.
+    /// 
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn add_writer_stdout(mut self, multi_thread: bool, capacity: Option<usize>) -> Logger {
+        let mut writer = BufferedWriter::new().on_stdout();
+
+        if multi_thread { writer = writer.with_separate_thread(); }
+        if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
+
+        match writer.init() {
+            Ok(initialized_writer) => self.writers.push(initialized_writer),
+            Err(error) => println!("Error while initializing writer. Details: {}", error),
+        }
+
+        self
+    }
+
+    ///
+    /// Adds a file writer. 
+    /// * `file_path` - The path of the file to write on.
+    /// * `multi_thread` - If set to true, the writer will be multi thread, otherwise single thread
+    /// * `capacity` - If Some(capacity), specified the buffer capacity of the writer. If None, initializes it with the default capacity.
+    /// 
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn add_writer_file(mut self, file_path: PathBuf, multi_thread: bool, capacity: Option<usize>) -> Logger {
+        let mut writer = BufferedWriter::new().on_file(file_path);
+        
+        if multi_thread { writer = writer.with_separate_thread(); }
+        if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
+
+        match writer.init() {
+            Ok(initialized_writer) => self.writers.push(initialized_writer),
+            Err(error) => println!("Error while initializing writer. Details: {}", error),
+        }
+
+        self
+    }
+
+    pub fn init(self) -> Result<(), SetLoggerError> {
+        log::set_max_level(self.log_level);
+        log::set_boxed_logger(Box::new(self))
+    }
+
+    pub fn log_level(&self) -> LevelFilter {
+        self.log_level
+    }
+
+}
+
+impl Default for Logger {
+    fn default() -> Self {
+        Logger::new()
+    }
+}
+
+impl Log for Logger {
+    fn enabled(&self, metadata: &log::Metadata) -> bool {
+        metadata.level().to_level_filter() <= self.log_level
+    }
+
+    fn log(&self, record: &log::Record) {
+        if !self.enabled(record.metadata()) {
+            return;
+        }
+
+        let mut target = "";
+
+        if self.target {
+            target = if !record.target().is_empty() {
+                    record.target()
+                } else {
+                    record.module_path().unwrap_or_default()
+                };
+        }
+
+
+        let thread = if self.thread {
+            format!("{}", std::thread::current().name().unwrap_or("?"))
+        } else {
+            "".to_string()
+        };
+        
+        let timestamp = match self.timestamps {
+            Timestamps::None => "".to_string(),
+            Timestamps::Local => format!(
+                "{}",
+                OffsetDateTime::now_local()
+                    .expect(concat!(
+                        "Could not determine the UTC offset on this system. ",
+                        "Consider displaying UTC time instead. ",
+                        "Possible causes are that the time crate does not implement \"local_offset_at\" ",
+                        "on your system, or that you are running in a multi-threaded environment and ",
+                        "the time crate is returning \"None\" from \"local_offset_at\" to avoid unsafe ",
+                        "behaviour. See the time crate's documentation for more information. ",
+                        "(https://time-rs.github.io/internal-api/time/index.html#feature-flags)"
+                    ))
+                    .format(TIMESTMAMP_FORMAT)
+                    .unwrap()
+            ),
+            Timestamps::Utc => format!( "{}", UtcDateTime::now().format(TIMESTMAMP_FORMAT).unwrap()),
+        };
+
+        let message = format!("{timestamp}-[{target}][{thread}] -> {{{}}} {}", record.level().to_string(), record.args());
+
+        for writer in &self.writers {
+            writer.write(message.as_str());
+        }
+    }
+
+    fn flush(&self) {
+        for writer in &self.writers {
+            writer.flush();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use log::{Metadata, Level};
+
+    use super::*;
+
+    #[test]
+    fn test_default_level() {
+        let builder = Logger::new();
+        assert_eq!(builder.log_level(), LevelFilter::Trace);
+    }
+
+    #[test]
+    fn test_creation_level() {
+        let builder = Logger::new().with_level(LevelFilter::Debug);
+        assert_eq!(builder.log_level(), LevelFilter::Debug);
+    }
+
+    #[test]
+    fn test_logger_enabled() {
+        let logger = Logger::new().with_level(LevelFilter::Debug);
+        assert_eq!(logger.log_level(), LevelFilter::Debug);
+        assert!(logger.enabled(&create_log("test_enabled", Level::Debug)));
+    }
+
+    #[test]
+    fn test_timestamp_default() {
+        let builder = Logger::new();
+        assert!(builder.timestamps == Timestamps::Local);
+    }
+
+    #[test]
+    fn test_utc_timestamp() {
+        let builder = Logger::new().with_utc_timestamps();
+        assert!(builder.timestamps == Timestamps::Utc);
+    }
+
+
+    fn create_log(name: &str, level: Level) -> Metadata {
+        let mut builder = Metadata::builder();
+        builder.level(level);
+        builder.target(name);
+        builder.build()
+    }
+}

@@ -1,0 +1,44 @@
+[package]
+name = "logger-rs"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "rslogger"
+path = "src/lib.rs"
+
+[dependencies]
+time = { version = "0.3.41", features = ["formatting", "macros", "local-offset"] }
+log = { version = "0.4.27", features = [ "std" ] }
+
+[[example]]
+name = "stdout-single-thread-local-timestamps"
+path = "examples/stdout/single-thread/local-timestamps.rs"
+
+[[example]]
+name = "std-out-single-thread-utc-timestamps"
+path = "examples/stdout/single-thread/utc-timestamps.rs"
+
+[[example]]
+name = "std-out-single-thread-with-target"
+path = "examples/stdout/single-thread/with-target.rs"
+
+[[example]]
+name = "std-out-single-thread-big-buf-capacity"
+path = "examples/stdout/single-thread/big-buf-capacity.rs"
+
+[[example]]
+name = "std-out-separate-thread-thread-names"
+path = "examples/stdout/separate-thread/thread-names.rs"
+
+[[example]]
+name = "std-out-separate-thread-no-thread-names"
+path = "examples/stdout/separate-thread/no-thread-names.rs"
+
+[[example]]
+name = "std-out-separate-thread-big-buf-capacity"
+path = "examples/stdout/separate-thread/big-buf-capacity.rs"
+
+[[example]]
+name = "file-single-thread-two-threads"
+path = "examples/file/single-thread/two-threads.rs"
