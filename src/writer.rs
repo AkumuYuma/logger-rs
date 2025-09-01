@@ -1,5 +1,5 @@
 use std::{
-    fs, io::{stdout, BufWriter, Write}, 
+    fs, io::{BufWriter, Write}, 
     path::PathBuf, 
     sync::{
         mpsc::{channel, Receiver, Sender
@@ -166,6 +166,7 @@ impl BufferedWriter {
     /// # Panics 
     /// If called before init()
     /// 
+    #[allow(dead_code)]
     pub fn flush(&self) {
         match &self.mode {
             WriteMode::ThisThread => 
