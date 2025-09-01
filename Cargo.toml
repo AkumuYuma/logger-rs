@@ -42,3 +42,7 @@ path = "examples/stdout/separate-thread/big-buf-capacity.rs"
 [[example]]
 name = "file-single-thread-two-threads"
 path = "examples/file/single-thread/two-threads.rs"
+
+[[example]]
+name = "file-and-stdout-generic"
+path = "examples/file_and_stdout/generic.rs"
