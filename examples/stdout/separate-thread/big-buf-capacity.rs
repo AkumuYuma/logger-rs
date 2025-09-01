@@ -12,10 +12,9 @@ fn main() {
     warn!("This is a warn test");
     error!("This is an error test");
 
-    // In this case, even if we flush, we are not able to see the log traces. 
-    // Or to be more precise, we don't ALWAYS see the traces, sometimes we do.
-    // This is because flush is just sending a flush command to the separate thread, 
-    // but the thread was stopped before processing that command. 
-    // @TODO Add some handling of this thing.
+    // Note: This method must be called only at the end of the program. After that, you can no longer log.
     log::logger().flush();
+
+    // This would panic
+    // info!("Test");
 }

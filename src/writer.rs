@@ -23,6 +23,7 @@ enum WriteMode {
 enum MsgType {
     Msg(String),
     Flush,
+    FlushAndStop,
 }
 
 pub struct BufferedWriter {
@@ -167,9 +168,30 @@ impl BufferedWriter {
     /// 
     pub fn flush(&self) {
         match &self.mode {
-            WriteMode::ThisThread => BufferedWriter::flush_on_this_thread(
-                self.buf_writer.as_ref().unwrap()),
-            WriteMode::SeparateThread => self.sender.as_ref().unwrap().send(MsgType::Flush).unwrap_or_default(),
+            WriteMode::ThisThread => 
+                BufferedWriter::flush_on_this_thread(self.buf_writer.as_ref().unwrap()),
+            WriteMode::SeparateThread => 
+                self.sender.as_ref().unwrap().send(MsgType::Flush).unwrap_or_default(),
+        }
+    }
+
+    /// 
+    /// Flushes the buffer and clean up the writer. 
+    /// If the mode is SeparateThread, the thread will be stopped and it's no longer possible
+    /// to write anything else. 
+    /// After calling this method you can only restart to write if you call the init method again.
+    /// Use this method before dropping the BufferedWriter to ensure all the data are flushed.
+    /// 
+    pub fn flush_and_cleanup(&mut self) {
+        match &self.mode {
+            WriteMode::ThisThread => 
+                BufferedWriter::flush_on_this_thread(self.buf_writer.as_ref().unwrap()),
+            WriteMode::SeparateThread => {
+                self.sender.as_ref().unwrap().send(MsgType::FlushAndStop).unwrap_or_default();
+                self.sender.take();
+                self.buf_writer.take();
+                self.thread_handler.take().unwrap().join().expect("Unable to join the Logger Tread.");
+            }
         }
     }
 
@@ -258,6 +280,10 @@ impl BufferedWriter {
                 match new_message {
                     MsgType::Msg(msg) => BufferedWriter::write_on_this_thread(&msg, &*buf_writer_to_move),
                     MsgType::Flush => BufferedWriter::flush_on_this_thread(&*buf_writer_to_move),
+                    MsgType::FlushAndStop => {
+                        BufferedWriter::flush_on_this_thread(&*&buf_writer_to_move);
+                        break;
+                    }
                 }
             }
         }) {
@@ -298,8 +324,8 @@ impl BufferedWriter {
     }
 }
 
-mod tests {
-    use super::*;
-
-
+impl Drop for BufferedWriter {
+    fn drop(&mut self) {
+        self.flush_and_cleanup();
+    }
 }

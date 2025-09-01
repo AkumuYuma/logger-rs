@@ -1,5 +1,5 @@
 mod writer;
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::RwLock};
 
 use crate::writer::BufferedWriter;
 
@@ -24,7 +24,15 @@ pub struct Logger {
     timestamps: Timestamps,
     thread: bool,
     target: bool,
-    writers: Vec<BufferedWriter>,
+    ///
+    /// The RwLock is needed to provide interior mutability. 
+    /// That bitch of the Log crate decided to declare flush method as flush(&self) and not 
+    /// flush(&mut self) and there is no way to call a method of the Logger struct that is not 
+    /// in the Log Trait (because when you set the boxed logger, they convert it into &'static).
+    /// So in order to ensure that the multi threaded BufferedWriter can flush and stop the thread
+    /// we need a mutable reference to it inside the flush method.
+    /// Also, it is an RwLock and not an Rc because this structure must be Sync + Send.
+    writers: Vec<RwLock<BufferedWriter>>,
 }
 
 impl Logger {
@@ -100,6 +108,7 @@ impl Logger {
 
     ///
     /// Adds a stdout writer. 
+    /// # Param
     /// * `multi_thread` - If set to true, the writer will be multi thread, otherwise single thread
     /// * `capacity` - If Some(capacity), specified the buffer capacity of the writer. If None, initializes it with the default capacity.
     /// 
@@ -111,7 +120,7 @@ impl Logger {
         if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
 
         match writer.init() {
-            Ok(initialized_writer) => self.writers.push(initialized_writer),
+            Ok(initialized_writer) => self.writers.push(RwLock::new(initialized_writer)),
             Err(error) => println!("Error while initializing writer. Details: {}", error),
         }
 
@@ -120,6 +129,7 @@ impl Logger {
 
     ///
     /// Adds a file writer. 
+    /// # Param
     /// * `file_path` - The path of the file to write on.
     /// * `multi_thread` - If set to true, the writer will be multi thread, otherwise single thread
     /// * `capacity` - If Some(capacity), specified the buffer capacity of the writer. If None, initializes it with the default capacity.
@@ -132,7 +142,7 @@ impl Logger {
         if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
 
         match writer.init() {
-            Ok(initialized_writer) => self.writers.push(initialized_writer),
+            Ok(initialized_writer) => self.writers.push(RwLock::new(initialized_writer)),
             Err(error) => println!("Error while initializing writer. Details: {}", error),
         }
 
@@ -147,7 +157,6 @@ impl Logger {
     pub fn log_level(&self) -> LevelFilter {
         self.log_level
     }
-
 }
 
 impl Default for Logger {
@@ -206,15 +215,46 @@ impl Log for Logger {
         let message = format!("{timestamp}-[{target}][{thread}] -> {{{}}} {}", record.level().to_string(), record.args());
 
         for writer in &self.writers {
-            writer.write(message.as_str());
+            if let Ok(writer_mut) = writer.write() {
+                writer_mut.write(message.as_str());
+            } else {
+                panic!("Cannot get writer as mutable. RWLock is poisoned!");
+            }
         }
     }
 
+    ///
+    /// Flushes to ensure that all possible buffered data are logged. 
+    /// This method should be called right before closing the program or when you don't need to 
+    /// log anything else. 
+    /// This is because in case of separate thread, the logger thread will be stopped.
+    /// # Example
+    /// ```
+    /// use rslogger::Logger;
+    /// use log::{info, warn, error};
+    /// Logger::new()
+    ///     .with_level(log::LevelFilter::Trace)
+    ///     .with_local_timestamps()
+    ///     .add_writer_stdout(true, Some(1000))
+    ///     .init().unwrap();
+    /// info!("This is a info test");
+    /// warn!("This is a warn test");
+    /// error!("This is an error test");
+    /// log::logger().flush();
+    /// let result = std::panic::catch_unwind(|| info!("Test"));
+    /// assert!(result.is_err())
+    /// ```
+    /// 
     fn flush(&self) {
         for writer in &self.writers {
-            writer.flush();
+            if let Ok(mut writer_mut) = writer.write() {
+                writer_mut.flush_and_cleanup();
+            } else {
+                panic!("Cannot get writer as mutable. RWLock is poisoned!");
+            }
         }
     }
+
 }
 
 #[cfg(test)]
