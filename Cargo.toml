@@ -1,5 +1,5 @@
 [package]
-name = "logger-rs"
+name = "flex-logger"
 version = "0.0.1"
 edition = "2024"
 repository = "https://github.com/AkumuYuma/logger-rs"

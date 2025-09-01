@@ -1,4 +1,4 @@
-# logger-rs
+# flex-logger
 This is a simple logger implementing the log crate interface. 
 
 - It is simple to initialize and use, and supports logging directly on the caller thread as well as on a separate thread. 
