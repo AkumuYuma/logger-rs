@@ -4,6 +4,8 @@ version = "0.0.1"
 edition = "2024"
 repository = "https://github.com/AkumuYuma/logger-rs"
 readme = "README.md"
+description = "Simple logger implementing the log crate interface. Multi thread and buffered."
+license = "MIT"
 authors = ["Emanuele Fiorente"]
 keywords = ["logging"]
 
