@@ -1,7 +1,12 @@
 [package]
 name = "logger-rs"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
+repository = "https://github.com/AkumuYuma/logger-rs"
+readme = "README.md"
+authors = ["Emanuele Fiorente"]
+keywords = ["logging"]
+
 
 [lib]
 name = "rslogger"
