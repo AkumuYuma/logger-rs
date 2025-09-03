@@ -39,6 +39,10 @@ name = "std-out-separate-thread-thread-names"
 path = "examples/stdout/separate-thread/thread-names.rs"
 
 [[example]]
+name = "std-out-separate-thread-thread-ids"
+path = "examples/stdout/separate-thread/thread-ids.rs"
+
+[[example]]
 name = "std-out-separate-thread-no-thread-names"
 path = "examples/stdout/separate-thread/no-thread-names.rs"
 

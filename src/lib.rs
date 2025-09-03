@@ -187,7 +187,11 @@ impl Log for Logger {
 
 
         let thread = if self.thread {
-            format!("{}", std::thread::current().name().unwrap_or("?"))
+            if let Some(thread_name) = std::thread::current().name() {
+                format!("{}", thread_name)
+            } else {
+                format!("{:?}", std::thread::current().id())
+            }
         } else {
             "".to_string()
         };
