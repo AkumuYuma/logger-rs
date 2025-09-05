@@ -1,7 +1,7 @@
 use std::thread;
 
 use rslogger::Logger;
-use log::{info, warn, error};
+use log::{info, warn};
 
 fn main() {
     Logger::new()

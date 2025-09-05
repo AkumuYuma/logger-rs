@@ -3,7 +3,7 @@ use std::{path::PathBuf, sync::RwLock};
 
 use crate::writer::BufferedWriter;
 
-use log::{Log, SetLoggerError, LevelFilter};
+use log::{LevelFilter, Log, SetLoggerError};
 use time::{format_description::FormatItem, OffsetDateTime, UtcDateTime};
 
 const TIMESTMAMP_FORMAT: &[FormatItem] = time::macros::format_description!(
@@ -33,6 +33,7 @@ pub struct Logger {
     /// we need a mutable reference to it inside the flush method.
     /// Also, it is an RwLock and not an Rc because this structure must be Sync + Send.
     writers: Vec<RwLock<BufferedWriter>>,
+    writer_levels: Vec<LevelFilter>,
 }
 
 impl Logger {
@@ -54,7 +55,9 @@ impl Logger {
             timestamps: Timestamps::Local, 
             target: false,
             thread: false, 
-            writers: Vec::new() }
+            writers: Vec::new(),
+            writer_levels: Vec::new()
+        }
     }
 
     /// Sets the global log level of the logger. 
@@ -114,17 +117,36 @@ impl Logger {
     /// 
     #[must_use = "You must call init() to initialize the logger"]
     pub fn add_writer_stdout(mut self, multi_thread: bool, capacity: Option<usize>) -> Logger {
-        let mut writer = BufferedWriter::new().on_stdout();
-
-        if multi_thread { writer = writer.with_separate_thread(); }
-        if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
-
-        match writer.init() {
-            Ok(initialized_writer) => self.writers.push(RwLock::new(initialized_writer)),
-            Err(error) => println!("Error while initializing writer. Details: {}", error),
-        }
-
+        let default_level = self.log_level.clone();
+        self = self.add_writer_stdout_level(multi_thread, capacity, default_level);
         self
+    }
+
+    ///
+    /// Adds a stdout writer. 
+    /// # Param
+    /// * `multi_thread` - If set to true, the writer will be multi thread, otherwise single thread
+    /// * `capacity` - If Some(capacity), specified the buffer capacity of the writer. If None, initializes it with the default capacity.
+    /// * `level` - Max level for this tracer.
+    /// 
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn add_writer_stdout_with_level(mut self, multi_thread: bool, capacity: Option<usize>, level: LevelFilter) -> Logger {
+        self = self.add_writer_stdout_level(multi_thread, capacity, level);
+        self
+    }
+
+    ///
+    /// Adds a file writer. 
+    /// # Param
+    /// * `file_path` - The path of the file to write on.
+    /// * `multi_thread` - If set to true, the writer will be multi thread, otherwise single thread
+    /// * `capacity` - If Some(capacity), specified the buffer capacity of the writer. If None, initializes it with the default capacity.
+    /// * `level` - Max level for this tracer.
+    /// 
+    #[must_use = "You must call init() to initialize the logger"]
+    pub fn add_writer_file(self, file_path: PathBuf, multi_thread: bool, capacity: Option<usize>) -> Logger {
+        let default_level = self.log_level.clone();
+        self.add_writer_file_level(file_path, multi_thread, capacity, default_level)
     }
 
     ///
@@ -135,18 +157,8 @@ impl Logger {
     /// * `capacity` - If Some(capacity), specified the buffer capacity of the writer. If None, initializes it with the default capacity.
     /// 
     #[must_use = "You must call init() to initialize the logger"]
-    pub fn add_writer_file(mut self, file_path: PathBuf, multi_thread: bool, capacity: Option<usize>) -> Logger {
-        let mut writer = BufferedWriter::new().on_file(file_path);
-        
-        if multi_thread { writer = writer.with_separate_thread(); }
-        if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
-
-        match writer.init() {
-            Ok(initialized_writer) => self.writers.push(RwLock::new(initialized_writer)),
-            Err(error) => println!("Error while initializing writer. Details: {}", error),
-        }
-
-        self
+    pub fn add_writer_file_with_level(self, file_path: PathBuf, multi_thread: bool, capacity: Option<usize>, level: LevelFilter) -> Logger {
+        self.add_writer_file_level(file_path, multi_thread, capacity, level)
     }
 
     pub fn init(self) -> Result<(), SetLoggerError> {
@@ -156,6 +168,42 @@ impl Logger {
 
     pub fn log_level(&self) -> LevelFilter {
         self.log_level
+    }
+
+
+    fn add_writer_stdout_level(mut self, multi_thread: bool, capacity: Option<usize>, level: LevelFilter) -> Logger {
+        let mut writer = BufferedWriter::new().on_stdout();
+
+        if multi_thread { writer = writer.with_separate_thread(); }
+        if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
+
+        match writer.init() {
+            Ok(initialized_writer) => {
+                self.writers.push(RwLock::new(initialized_writer));
+                self.writer_levels.push(level.to_owned());
+            },
+            Err(error) => println!("Error while initializing writer. Details: {}", error),
+        }
+
+        self
+    }
+
+
+    fn add_writer_file_level(mut self, file_path: PathBuf, multi_thread: bool, capacity: Option<usize>, level: LevelFilter) -> Logger {
+        let mut writer = BufferedWriter::new().on_file(file_path);
+        
+        if multi_thread { writer = writer.with_separate_thread(); }
+        if let Some(buf_cap) = capacity { writer = writer.with_buffer_capacity(buf_cap) }
+
+        match writer.init() {
+            Ok(initialized_writer) => {
+                self.writers.push(RwLock::new(initialized_writer));
+                self.writer_levels.push(level.to_owned());
+            },
+            Err(error) => println!("Error while initializing writer. Details: {}", error),
+        }
+
+        self
     }
 }
 
@@ -218,7 +266,16 @@ impl Log for Logger {
 
         let message = format!("{timestamp}-[{target}][{thread}] -> {{{}}} {}", record.level().to_string(), record.args());
 
-        for writer in &self.writers {
+        for (index, writer) in self.writers.iter().enumerate() {
+            if index >= self.writer_levels.len() {
+                panic!("Level index out of range!");
+            }
+
+            // Skip as this trace should not be traced on this writer!
+            if record.metadata().level().to_level_filter() > self.writer_levels[index] {
+                continue;
+            }
+
             if let Ok(writer_mut) = writer.write() {
                 writer_mut.write(message.as_str());
             } else {

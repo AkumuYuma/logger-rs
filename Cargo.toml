@@ -1,6 +1,6 @@
 [package]
 name = "flex-logger"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 repository = "https://github.com/AkumuYuma/logger-rs"
 readme = "README.md"
@@ -57,3 +57,7 @@ path = "examples/file/single-thread/two-threads.rs"
 [[example]]
 name = "file-and-stdout-generic"
 path = "examples/file_and_stdout/generic.rs"
+
+[[example]]
+name = "file-and-stdout-different-levels"
+path = "examples/file_and_stdout/different-levels.rs"
